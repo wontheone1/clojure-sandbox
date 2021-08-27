@@ -7,102 +7,116 @@
                              srange STAY transform MAP-VALS pred>= putval walker view]]
     ))
 
-(transform [MAP-VALS MAP-VALS]
-           inc
-           {:a {:aa 1} :b {:ba -1 :bb 2}})
+[:heart 1]
+[:diamond 13]
 
-(transform [ALL :a even?]
-           inc
-           [{:a 1} {:a 2} {:a 4} {:a 3}])
+(def poker-deck
+  (for [suit [:heart :diamond :spade :clober]
+        rank (range 1 14)
+        ]
+    [suit rank]))
 
-(select [ALL ALL #(= 0 (mod % 3))]
-        [[1 2 3 4] [] [5 3 2 18] [2 4 6] [12]])
+(defn get-hand [poker-deck]
+  (->> poker-deck
+       (shuffle)
+       (take 5)))
 
-(transform [(filterer odd?) LAST]
-           inc
-           [2 1 3 6 9 4 8])
+(defn have-expected-number-of-rank-pair? [hand expected-num rank]
+  (let [pairnum->pairs (->> (get-hand hand)
+                            (group-by (fn [[suit rank]] rank))
+                            (map (fn [[number pairs]] {:num-pairs (count pairs)
+                                                       :number number}))
+                            (group-by (fn [{:keys [num-pairs number]}] num-pairs))
 
-(setval [:a ALL nil?] NONE {:a [1 2 nil 3 nil]})
+                            )]
+    (println :hand hand)
+    (println pairnum->pairs)
+    (boolean (= expected-num (count (pairnum->pairs rank))))))
 
-(setval [:a :b :c] NONE {:a {:b {:c 1}}})
+(defn have-pair? [hand]
+  (have-expected-number-of-rank-pair? hand 1 2))
 
-(setval [:a (compact :b :c)] NONE {:a {:b {:c 1}}})
+(defn have-two-pairs? [hand]
+  (have-expected-number-of-rank-pair? hand 2 2))
 
-(transform [(srange 1 4) ALL odd?] inc [0 1 2 3 4 5 6 7])
+(have-two-pairs? '([:spade 12]  [:diamond 12] [:heart 3] [:clober 3] [:diamond 7]))
+(have-two-pairs? '([:spade 12]  [:diamond 12] [:heart 3] [:clober 4] [:diamond 7]))
 
-(setval (srange 2 4) [:a :b :c :d :e] [0 1 2 3 4 5 6 7 8 9])
+(defn have-triple? [hand]
+  (have-expected-number-of-rank-pair? hand 1 3))
 
-(setval [ALL END] [:a :b] [[1] '(1 2) [:c]])
+(defn have-four-card? [hand]
+  (have-expected-number-of-rank-pair? hand 1 4))
 
-(select (walker keyword?)
-        {3 [1 2 [6 7]] :a 4 :c {:a 5 :d [9 nil]}})
+(have-pair? '([:spade 12]  [:diamond 12] [:heart 3] [:clober 4] [:diamond 7]))
+(have-pair? '([:spade 12]  [:diamond 12] [:heart 3] [:clober 3] [:diamond 7]))
+(have-triple? '([:spade 12]  [:diamond 12] [:heart 12] [:clober 3] [:diamond 7]))
+(have-triple? '([:spade 12]  [:diamond 12] [:heart 3] [:clober 3] [:diamond 7]))
 
-(transform [(srange 4 11) (filterer even?)]
-           reverse
-           [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15])
+(defn have-full-house? [hand]
+  (and (have-triple? hand) (have-pair? hand)))
 
-(setval [ALL
-         (selected? (filterer even?) (view count) (pred>= 2))
-         END]
-        [:c :d]
-        [[1 2 3 4 5 6] [7 0 -1] [8 8] []])
+(have-full-house? '([:spade 12]  [:diamond 12] [:heart 12] [:clober 3] [:diamond 3]))
+(have-full-house? '([:spade 12]  [:diamond 13] [:heart 12] [:clober 3] [:diamond 3]))
 
-(comment "When doing more involved transformations,
-you often find you lose context when navigating deep
- within a data structure and need information \"up\"
- the data structure to perform the transformation.
- Specter solves this problem by allowing you to
- collect values during navigation to use in the transform function.
-  Here's an example which transforms a sequence of maps by adding the
-   value of the :b key to the value of the :a key,
-    but only if the :a key is even:\n\n")
+(defn have-flush? [hand]
+  (->> hand
+       (group-by (fn [[suit rank]] suit))
+       (count)
+       (= 1)))
 
-(transform [ALL (collect-one :b) :a even?]
-           +
-           [{:a 1 :b 3} {:a 2 :b -10} {:a 4 :b 10} {:a 3}])
+(defn have-straight? [hand]
+  (let [sorted-ranks (sort (map (fn [[suit rank]] rank) hand))
+        minimum-rank (first sorted-ranks)
+        straignt-range (range minimum-rank (+ minimum-rank 5))]
+    (= straignt-range sorted-ranks)))
 
-(comment
-  The four built-in ways for collecting values are VAL,
-  collect, collect-one, and putval. VAL just adds whatever
-  element it's currently on to the value list, while collect
-  and collect-one take in a selector to navigate to the desired
-  value. collect works just like select by finding a sequence of values,
-  while collect-one expects to only navigate to a single value. Finally,
-  putval adds an external value into the collected values list.)
+(have-straight? '([:heart 12]  [:heart 10] [:heart 12] [:heart 3] [:heart 3]))
+(have-straight? '([:heart 13]  [:heart 1] [:heart 2] [:heart 3] [:heart 4]))
 
-(transform [:a (putval 10)]
-           +
-           {:a 1 :b 3})
+(have-flush? '([:heart 12]  [:heart 10] [:heart 12] [:heart 3] [:heart 3]))
+(have-flush? '([:heart 12]  [:diamond 10] [:heart 12] [:heart 3] [:heart 3]))
 
-(transform [ALL (if-path [:a even?] [:c ALL] :d)]
-           inc
-           [{:a 2 :c [1 2] :d 4} {:a 4 :c [0 10 -1]} {:a -1 :c [1 1 1] :d 1}])
+(defn evaluate-hand [hand]
+  (cond
+    (have-straight? hand)
+    :straight
 
-(comment
-  The next examples demonstrate recursive navigation.
-  Here's one way to double all the even numbers in a tree.
-  )
+    (have-four-card? hand)
+    :four-card
 
-(defprotocolpath TreeWalker [])
+    (have-full-house? hand)
+    :full-house
 
-(extend-protocolpath TreeWalker
-                     Object nil
-                     clojure.lang.PersistentVector [ALL TreeWalker])
+    (have-flush? hand)
+    :flush
 
-(transform [TreeWalker number? even?] #(* 2 %) [:a 1 [2 [[[3]]] :e] [4 5 [6 7]]])
+    (have-triple? hand)
+    :triple
 
-(def TreeValues
-  (recursive-path [] p
-                  (if-path vector?
-                           [ALL p]
-                           STAY
-                           )))
+    (have-two-pairs? hand)
+    :two-pairs
 
-(comment
-  Here's how to reverse the positions of all even numbers in a tree (with order based on a depth first search).
-  This example uses conditional navigation instead of protocol paths to do the walk)
+    (have-pair? hand)
+    :pair
 
-(transform (subselect TreeValues even?)
-           reverse
-           [1 2 [3 [[4]] 5] [6 [7 8] 9 [[10]]]]
-           )
+    :else
+    :high-card
+    ))
+
+#_(defn have-pair? [hand]
+  (let [pairnum->pairs (->> (get-hand hand)
+                            (group-by (fn [[suit rank]] rank))
+                            (map (fn [[number pairs]] {:num-pairs (count pairs)
+                                                       :number number}))
+                            (group-by (fn [{:keys [num-pairs number]}] num-pairs))
+
+                            )]
+    (println :hand hand)
+    (println pairnum->pairs)
+    (boolean (= 1 (count (pairnum->pairs 2))))))
+
+
+
+'([:spade 12]  [:diamond 12] [:heart 3] [:clober 4] [:diamond 7])
+'([:spade 12]  [:diamond 12] [:heart 3] [:clober 3] [:diamond 7])
